@@ -3,7 +3,8 @@ import { StyleSheet, Text, View, FlatList, TouchableOpacity, Alert } from 'react
 import { Camera, CameraView } from 'expo-camera';
 import * as FileSystem from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
-import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing'; // Para compartilhar o PDF
+import { jsPDF } from 'jspdf'; // Biblioteca para gerar PDFs
 
 interface HistoryItem {
   barcode: string;
@@ -31,21 +32,43 @@ export default function App() {
   };
 
   const generatePDF = async () => {
-    const htmlContent = `
-      <html>
-        <head><style>body { font-family: Arial, sans-serif; }</style></head>
-        <body>
-          <h1>Relatório de Patrimônios</h1>
-          <ul>
-            ${history.map(item => `<li>${item.type}: ${item.barcode}</li>`).join('')}
-          </ul>
-        </body>
-      </html>
-    `;
-    
-    const { uri } = await Print.printToFileAsync({ html: htmlContent });
-    Alert.alert('PDF Gerado', `Local do arquivo: ${uri}`);
+    try {
+      const doc = new jsPDF();
+  
+      // Cabeçalho
+      doc.text('Relatório de Patrimônios', 14, 10);
+      doc.text(14, 20, 'Itens Escaneados:');
+  
+      history.forEach((item, index) => {
+        doc.text(20, 30 + index * 10, `${item.type}: ${item.barcode}`);
+      });
+  
+      // Gera o PDF como base64
+      const pdfOutput = doc.output('datauristring');
+      const pdfName = `Relatorio_${new Date().toISOString()}.pdf`;
+      const uri = FileSystem.documentDirectory + pdfName;
+  
+      // Salva o PDF no armazenamento interno
+      await FileSystem.writeAsStringAsync(uri, pdfOutput.split(',')[1], {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+  
+      
+  
+      // Compartilha o PDF se disponível
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri);
+      } else {
+        Alert.alert('Erro', 'O compartilhamento não está disponível no seu dispositivo.');
+      }
+  
+      Alert.alert('Sucesso', 'O PDF foi gerado e salvo com sucesso!');
+    } catch (error) {
+     
+      Alert.alert('Erro', 'Falha ao gerar o PDF.');
+    }
   };
+  
 
   if (hasPermission === null) {
     return <Text>Solicitando permissão para acessar a câmera</Text>;
@@ -68,18 +91,14 @@ export default function App() {
           </TouchableOpacity>
         ))}
       </View>
-      <CameraView 
-        ref={cameraRef} 
-        style={styles.camera} 
-        onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-      />
+      <CameraView ref={cameraRef} style={styles.camera} onBarcodeScanned={scanned ? undefined : handleBarCodeScanned} />
       {scanned && (
         <TouchableOpacity style={styles.button} onPress={() => setScanned(false)}>
           <Text style={styles.buttonText}>Toque para escanear novamente</Text>
         </TouchableOpacity>
       )}
       <TouchableOpacity style={styles.button} onPress={generatePDF}>
-        <Text style={styles.buttonText}>Gerar PDF</Text>
+        <Text style={styles.buttonText}>Gerar PDF e Compartilhar</Text>
       </TouchableOpacity>
       <FlatList
         data={history}
